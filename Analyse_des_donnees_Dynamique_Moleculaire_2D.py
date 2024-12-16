@@ -21,6 +21,8 @@ def format_e(n):
     return a.split('E')[0].rstrip('0').rstrip('.') + 'E' + a.split('E')[1]
 
 class DataFrames :
+    """Objet qui charge les données relatives à la simulation dans : 
+        self.data_frame[numéro de la simulation][numéro de l'atome][0:positions|1:old_positions][0:x|1:y]"""
     
     global date
     date = datetime.now().isoformat().replace(":","-")
@@ -56,7 +58,8 @@ class DataFrames :
         file.close()
         print("Fichier chargé.")
 
-    def create_gif(self,keep_images=False):
+    def create_gif(self,duration = 0.01):
+        """Créé un gif à partir de toutes les frames générée par la simulation"""
         
         if not os.path.exists(self.path_folder+"/all_images"):
             os.mkdir(self.path_folder+"/all_images")
@@ -89,17 +92,15 @@ class DataFrames :
             
         try :
             print(f"images : {images}")
-            imageio.mimsave(self.path_folder + "/" + self.simulation_name +".gif", images, duration=0.01)
+            imageio.mimsave(self.path_folder + "/" + self.simulation_name +".gif", images, duration=duration)
             print("Gif exporté sous : "+ self.path_folder +"/" + self.simulation_name +".gif")
         except OSError as error:
             print("ERROR :" + error)
-            
-        # if keep_images == False:
-        #     [os.remove(fn) for fn in files_names]
-        #     os.remove(self.path_folder+"/all_images")
         
 
     def calcul_energie(self):
+        """Créé un graphique représentant l'énergie cinétique dans le système en fonctoin de la frame"""
+        
         print("Calcul de l'énegie cinétique au cours de la simulation")
         Ec_list = []
         for i_frame in range(self.nb_frames):
@@ -108,8 +109,11 @@ class DataFrames :
                 Ec += 0.5*self.mass*((self.data_frame[i_frame][i_atome][0][0]-self.data_frame[i_frame][i_atome][1][0])**2+(self.data_frame[i_frame][i_atome][0][1]-self.data_frame[i_frame][i_atome][1][1])**2)
             Ec_list.append(Ec)
             
-        plt.plot(range(len(Ec_list)),Ec_list)
         plt.title("Ec au cours des itération")
+        plt.ylabel("$E_c$")
+        plt.xlabel("Frame")
+        plt.plot(range(len(Ec_list)),Ec_list)
+        
         plt.savefig(self.path_folder + f"/Ec a ucours des intération Date_{date}.png", dpi = 240)
         plt.show()
         
@@ -143,7 +147,26 @@ class DataFrames :
         plt.plot(x,g_r)
         plt.show()
         pass
-
+    
+    def plot_frame(self, i_frame=0):
+        X=np.array([])
+        Y=np.array([])
+        
+        for i_atome in range(self.nb_atomes):
+            X = np.append(X,self.data_frame[i_frame][i_atome][0][0])
+            Y = np.append(Y,self.data_frame[i_frame][i_atome][0][1])
+            
+        cmap = plt.colormaps['viridis'].resampled(len(X))
+        plt.scatter(X,Y,c=range(len(X)),cmap=cmap,s=8)
+        
+        plt.title(self.simulation_name)
+        plt.xlabel("x")
+        plt.ylabel("y")
+        plt.xlim(0,self.dimensions[0])
+        plt.ylim(0,self.dimensions[1])
+        
+        plt.show()
+        # plt.cla()
 
 
 

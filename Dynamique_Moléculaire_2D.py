@@ -297,34 +297,6 @@ class System:
         """Ajoute un atome au système."""
         
         self.list_atomes.append(Atome)
-        
-    def calcul_rdf(self, dist_max, nb_points):
-        """Calcul la RDF dans le système."""
-        
-        Lx,Ly = self.dimensions[0], self.dimensions[1]
-        dr = dist_max/nb_points
-        g_r = np.zeros(nb_points)
-        dist_max_2 = dist_max**2
-        
-        for atome1 in self.list_atomes:
-            for atome0 in self.list_atomes:
-                dx = atome1.position[0]-atome0.position[0]
-                dy = atome1.position[1]-atome0.position[1]
-                
-                #print(f"(dx,dy) : ({dx},{dy})")
-                
-                dx = dx - int(dx*2/Lx)*Lx
-                dy = dy - int(dy*2/Ly)*Ly
-                r2 = (dx)**2+(dy)**2 #r^2
-                
-                
-                if r2 < dist_max_2:
-                    r = np.sqrt(r2)
-                    g_r[int(r/dr)] += 1
-        
-        x = np.linspace(0,dist_max,nb_points)
-        plt.plot(x,g_r)
-        plt.show()
     
     def warning(self):
         """Active l'affichage des problèmes rencontrés lors de la simulation (Ex: lorsqu'une particule traverse plus d'une boite)"""
