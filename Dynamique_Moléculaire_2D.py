@@ -76,10 +76,6 @@ class Atome :
 
 class System:
     
-    global date
-    date = datetime.now().isoformat().replace(":","-")
-    date = date.replace("T", " Time_")
-    
     def __init__(self, dimensions, nb_atomes, mass, epsilon, sigma, dt, temperature):
         self.dimensions = dimensions
         self.nb_atomes = nb_atomes
@@ -307,6 +303,9 @@ class System:
         self.save_path = save_path
         if not os.path.isdir(self.save_path):
             os.mkdir(self.save_path)
+        
+        date = datetime.now().isoformat().replace(":","-")
+        date = date.replace("T", " Time_")
         
         if simulation_name == "":
             self.simulation_name = f"N={self.nb_atomes};T={self.temperature}K;epsilon={self.epsilon}kBJ;sigma={self.sigma}pm;dimensions=({self.dimensions[0]},{self.dimensions[1]});dt={self.dt}" +f" Date_{date}"
