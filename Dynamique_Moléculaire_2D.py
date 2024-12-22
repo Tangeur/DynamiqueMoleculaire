@@ -11,6 +11,8 @@ import random as rnd
 from datetime import datetime
 import os
 from decimal import Decimal
+import h5py
+import sys
 
 rnd.seed(20)
 kb = 1.38e-23 #J/K
@@ -23,13 +25,12 @@ def format_e(n):
 
 class Atome : 
     
-    def __init__(self, position, old_position, mass, force, type = None, tracking = False, warning = False):
+    def __init__(self, position, old_position, mass, force, type = None):
         self.position = position
         self.old_position = old_position
         self.mass = mass
         self.force = force
         self.type = type
-        self.warning = warning
     
     def move(self, system, dt) :
         """Fait bouger l'atome en fonction de sa position, son ancienne position et de la résultante des forces qu'il subit des autres atomes."""
@@ -48,9 +49,9 @@ class Atome :
         #Tracking :
         #print(f"(x_n,y_n) = ({x_n},{y_n})")
         
-        if self.warning:
-            if (x_n > 1 or y_n > 1):    
-                print(f"[WARNING] : (x_n,y_n) = ({x_n},{y_n}) Les atomes traversent plus d'une boite par itération !")
+        #Warning : 
+        if (x_n > 1 or y_n > 1):    
+            print(f"[WARNING] : (x_n,y_n) = ({x_n},{y_n}) Les atomes traversent plus d'une boite par itération !")
         
         if abs(x_n) > 0:
             x_new_position_update = (new_position[0]-(np.sign(x_n)*(abs(x_n)+1)*abs_Lx_2)) #On replace le points dans la boite de l'autre côté
@@ -76,7 +77,7 @@ class Atome :
 
 class System:
     
-    def __init__(self, dimensions, nb_atomes, mass, epsilon, sigma, dt, temperature):
+    def __init__(self, dimensions, nb_atomes, mass, epsilon, sigma, dt, temperature, force_Rcut):
         self.dimensions = dimensions
         self.nb_atomes = nb_atomes
         self.mass = mass
@@ -84,11 +85,13 @@ class System:
         self.sigma = sigma
         self.dt = dt 
         self.temperature = temperature
+        self.force_Rcut2 = force_Rcut*force_Rcut
         
         self.alpha = 2*sigma**6
         self.beta = 24*epsilon*sigma**6
         self.iteration = 0
         self.list_atomes = []
+        self.grid_type = None
         
         self.save_path = ""     #Chemin du dossier qui contient les dossiers de toutes les simulations
         self.path_simulation_folder = ""  #Chemin du dossier qui contient les fichiers de la simulation qu'on crée
@@ -107,12 +110,16 @@ class System:
         
         return old_position_calculated
     
-    def initialise_system(self,  dmin_beetween_atomes, grid = "Random"):
+    def initialise_system(self,  dmin_beetween_atomes, grid_type = "Random"):
         """Créé le system selon le réseau souhaité selon : Random/Square/Hexagon avec un paramètre de maille : dmin_beetween_atomes."""
         
         print(f"Création d'un système de dimensions {self.dimensions} consitué de {self.nb_atomes} atomes")
         
-        if grid == "Square" :
+        if grid_type == "Square" :
+            
+            print("[Info] Initialisation d'un système selon un réseau carré. Le nombre d'atomes va être adapté au réseau.")
+            
+            self.grid_type = "Square"
             
             Lx,Ly = self.dimensions[0],self.dimensions[1]
             
@@ -123,7 +130,7 @@ class System:
             # print(f"(Lx,Ly)/dmin_beetween_atomes : ({Lx/dmin_beetween_atomes},{Ly/dmin_beetween_atomes})")
             
             self.dimensions = (Lx,Ly)
-            print(f"Ajustement de la taille du système : (Lx,Ly) = ({Lx},{Ly})")
+            print(f"[Info] Ajustement de la taille du système : (Lx,Ly) = ({Lx},{Ly})")
             
             N_xgrid = int(Lx / dmin_beetween_atomes)
             N_ygrid = int(Ly / dmin_beetween_atomes)
@@ -135,7 +142,7 @@ class System:
                     boxes.append((i,j))
             
             self.nb_atomes = len(boxes)
-            print(f"Ajustement du nombre d'atomes : {self.nb_atomes}")
+            print(f"[Info] Ajustement du nombre d'atomes : {self.nb_atomes}")
             
             for boxe in boxes:
                 x_boxe, y_boxe = boxe[0],boxe[1]
@@ -147,11 +154,13 @@ class System:
                 self.list_atomes.append(Atome(position,old_position,self.mass,force))
 
         
-        elif grid == "Hexagon":
+        elif grid_type == "Hexagon":
             print("[ERREUR] Le système ne peut pas être initialisé comme cela.")
             pass
         
-        elif grid == "Random":
+        elif grid_type == "Random":
+            
+            self.grid_type = "Random"
             
             Lx,Ly = self.dimensions[0],self.dimensions[1]
             
@@ -207,7 +216,7 @@ class System:
         else : 
             print("[ERREUR] Impossible de créer le réseau")
               
-    def force(self, atome0,atome1,alpha,beta,Lx,Ly):
+    def force(self, atome0,atome1,alpha,beta,Lx,Ly,force_Rcut2):
         """Calcul la force exercé par l'atome0 sur l'atome 1."""
         
         dx = atome1.position[0]-atome0.position[0]
@@ -219,19 +228,22 @@ class System:
         dy = dy - int(dy*2/Ly)*Ly
         r2 = (dx)**2+(dy)**2 #r^2
         
-        if (r2==0):
+        if r2 < self.force_Rcut2 :
+            if (r2==0):
+                return np.array([.0,.0])
+            
+            r6 = r2**3 #r^6
+            r8 = r2**4 #r^8
+            # r = np.sqrt((dx)**2+(dy)**2)
+            beta_r8 =beta/r8
+            alpha_r6 = alpha/r6 - 1
+            
+            F_x = beta_r8*alpha_r6*dx
+            F_y = beta_r8*alpha_r6*dy
+            # F = (beta/r**8)*((alpha/r**6)-1)*(atome1.position-atome0.position)
+            return  np.array([F_x,F_y])
+        else :
             return np.array([.0,.0])
-        
-        r6 = r2**3 #r^6
-        r8 = r2**4 #r^8
-        # r = np.sqrt((dx)**2+(dy)**2)
-        beta_r8 =beta/r8
-        alpha_r6 = alpha/r6 - 1
-        
-        F_x = beta_r8*alpha_r6*dx
-        F_y = beta_r8*alpha_r6*dy
-        # F = (beta/r**8)*((alpha/r**6)-1)*(atome1.position-atome0.position)
-        return  np.array([F_x,F_y])
     
     def calculate_forces(self):
         """Calcul la force que subit chaque atome du à la présence de tous les autres atomes."""
@@ -239,7 +251,7 @@ class System:
         for atome1 in self.list_atomes:
             force_resultante = np.array([.0,.0])
             for atome0 in self.list_atomes:
-                force_resultante += self.force(atome0,atome1,self.alpha,self.beta,self.dimensions[0],self.dimensions[1])
+                force_resultante += self.force(atome0,atome1,self.alpha,self.beta,self.dimensions[0],self.dimensions[1],self.force_Rcut2)
             atome1.force = force_resultante
     
     def plot_system(self):
@@ -259,16 +271,31 @@ class System:
         plt.show()
       
     def save_frame(self): 
-        folder = open(self.path_simulation_folder+"/"+self.simulation_name+".txt", "a")
-        folder.write(f"#Itération : {self.iteration}\n")
+        
+        positions = []
+        old_positions = []
+        
+        self.list_frames.append(f"frame_{self.iteration}")
+        
         for atome in self.list_atomes:
-            folder.write(str(atome.position)+","+str(atome.old_position)+"\n")
-        folder.close()
+            positions.append(atome.position.tolist())
+            old_positions.append(atome.old_position.tolist())     
+        
+        file = h5py.File(self.path_simulation_folder+"/"+self.simulation_name+".hdf5",'a')        
+        
+        group = file.create_group(f"frame_{self.iteration}")
+        file.flush()
+        group.create_dataset("position",data=positions)
+        group.create_dataset("old_position",data=old_positions)
+        group.attrs.create("iteration", self.iteration)
+        file.close()
+
     
     def iterate(self, nb_iteration, saving_rate = 0, printing=False):
         """Fait passer le système au pas de temps suivant.
         printing : (True) Affiche les plot au fur et à mesure. """
 
+        print("Itération du système...")
         for i in range(nb_iteration):
             self.calculate_forces()
             for atome in self.list_atomes:
@@ -281,12 +308,17 @@ class System:
                         self.plot_system() 
                     
                     self.save_frame()
-                    print(f"Implémentation {i}/{nb_iteration}")
+                    print(f"Implementation {i}/{nb_iteration}")
                     
             except ZeroDivisionError :
                 #On ne fait rien, on ne sauvegarde pas de trace de l'évolution du système
                 pass
-    
+        
+        file = h5py.File(self.path_simulation_folder+"/"+self.simulation_name+".hdf5",'a')        
+        file.create_dataset(name="list_frames", data=self.list_frames)
+        file.close()
+        print("Séquence d'itération terminée")
+        
     
     
     def add_atome(self, Atome):
@@ -294,12 +326,14 @@ class System:
         
         self.list_atomes.append(Atome)
     
-    def warning(self):
-        """Active l'affichage des problèmes rencontrés lors de la simulation (Ex: lorsqu'une particule traverse plus d'une boite)"""
-        for i in self.list_atomes:
-            i.warning = True
-    
     def save_initialisation(self, save_path, simulation_name = ""):
+        
+        if self.grid_type == None:
+            print("[ERREUR] Vous n'avez pas initialisé le système avec : 'initialise_system()'")
+            sys.exit()
+        
+        self.list_frames = []
+        
         self.save_path = save_path
         if not os.path.isdir(self.save_path):
             os.mkdir(self.save_path)
@@ -315,11 +349,23 @@ class System:
         self.path_simulation_folder = self.save_path+"/"+self.simulation_name
         os.mkdir(self.path_simulation_folder)
         
-        self.path_simulation_file = self.path_simulation_folder+"/"+self.simulation_name+".txt"
+        self.path_simulation_file = self.path_simulation_folder+"/"+self.simulation_name+".hdf5"
         
-        folder = open(self.path_simulation_folder+"/"+self.simulation_name+".txt", "a")
-        folder.write("#Position : [x,y],Old_position:[old_x,old_y]\n")
-        folder.close()
+        file = h5py.File(self.path_simulation_file, 'a')
+
+        file.attrs.create("dimensions", self.dimensions)
+        file.attrs.create("nb_atomes",self.nb_atomes)
+        file.attrs.create("mass",self.mass)
+        file.attrs.create("epsilon", self.epsilon)
+        file.attrs.create("sigma",self.sigma)
+        file.attrs.create("dt", self.dt)
+        file.attrs.create("temperature", self.temperature)
+        file.attrs.create("force_Rcut",np.sqrt(self.force_Rcut2))
+        file.attrs.create("simulation_name",self.simulation_name)
+
+        file.flush()
+        file.close()
+
 
 
 

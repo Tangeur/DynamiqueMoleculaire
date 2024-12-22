@@ -12,6 +12,7 @@ from decimal import Decimal
 import imageio.v2 as imageio
 import os
 from datetime import datetime
+import h5py
 
 kb = 1.38e-23 #J/K
 
@@ -24,65 +25,47 @@ class DataFrames :
     """Objet qui charge les données relatives à la simulation dans : 
         self.data_frame[numéro de la simulation][numéro de l'atome][0:positions|1:old_positions][0:x|1:y]"""
     
-    def __init__ (self, path_simulation, parameters={"simulation_name":"undefined","saving_rate":"undefined","dimensions":(1.4e-9,1.4e-9),"mass":2e-26, "dt" : 1e-19}):
+    def __init__ (self, path_simulation):
         self.path_simulation = path_simulation
         self.path_folder = os.path.dirname(self.path_simulation)
-        self.simulation_name = parameters["simulation_name"]
-        self.saving_rate = parameters["saving_rate"]
-        self.dimensions = parameters["dimensions"]
-        self.mass = parameters["mass"]
-        self.dt = parameters["dt"]
         
-        self.data_frame = []
+        print("Importation des données...")
         
-        file = open(self.path_simulation, "r")
-        print("Chargement du fichier de la simulation...")
-        frame_number = -1
-        file.readline()
-        for line in file:
-            if line[0] != "#":
-                line = re.sub(r"[\[\]\n]","",line)
-                line_split = line.split(",")
-                line0, line1 = line_split[0].split(" "), line_split[1].split(" ")
-                if (len(line0) != 2 or len(line1) != 2):
-                    j_list = []
-                    i_list = []
-                    for i in range(len(line0)):
-                        if line0[i] == '':
-                            i_list.append(i)
-                    for j in range(len(line1)):
-                        if line1[j] == '':
-                            j_list.append(j)
-                    for i in i_list:
-                        line0.pop(i)
-                    for j in j_list:
-                        line1.pop(j)
-                
-                try :
-                    position, old_position = np.array([float(line0[0]),float(line0[1])]), np.array([float(line1[0]),float(line1[1])])
-                except ValueError as error:
-                    print(error)
-                    print(f"line0 : {line0} | line1 : {line1} | line : {line}")
-                    
-                self.data_frame[frame_number].append([position,old_position])
-                
-            else :
-                self.data_frame.append([])
-                frame_number += 1
-            
-        self.nb_atomes = len(self.data_frame[0])
-        self.nb_frames = len(self.data_frame)
-            
+        file = h5py.File(self.path_simulation, "r")
+        
+        self.dimensions = file.attrs["dimensions"]
+        self.mass = file.attrs["mass"]
+        self.dt = file.attrs["dt"]
+        self.sigma = file.attrs["sigma"]
+        self.epsilon = file.attrs["epsilon"]
+        self.temperature = file.attrs["temperature"]
+        self.force_Rcut = file.attrs["force_Rcut"]
+        
+        self.simulation_name = file.attrs["simulation_name"]
+        
+        self.data_frame_positions = []
+        self.data_frame_old_positions = []
+        
+        
+        self.nb_frames = len(file["list_frames"])
+        self.nb_atomes = file.attrs["nb_atomes"]
+        print(f"nb_frames : {self.nb_frames}")
+        
+        for i in range(self.nb_frames):
+            frame_name = file["list_frames"][i].decode("utf-8")
+            self.data_frame_positions.append(file[frame_name]["position"][:].tolist())
+            self.data_frame_old_positions.append(file[frame_name]["old_position"][:].tolist())
         file.close()
+    
         print("Fichier chargé.")
 
-    def create_gif(self,duration = 0.01):
+    def create_gif(self,duration = 0.01,title=""):
         """Créé un gif à partir de toutes les frames générée par la simulation"""
         
         if not os.path.exists(self.path_folder+"/all_images"):
             os.mkdir(self.path_folder+"/all_images")
 
-        print("Création du gif...")
+        print("Création des iamges...")
 
         files_names = []
         images = []
@@ -92,13 +75,16 @@ class DataFrames :
             Y=np.array([])
             
             for i_atome in range(self.nb_atomes):
-                X = np.append(X,self.data_frame[i_frame][i_atome][0][0])
-                Y = np.append(Y,self.data_frame[i_frame][i_atome][0][1])
+                X = np.append(X,self.data_frame_positions[i_frame][i_atome][0])
+                Y = np.append(Y,self.data_frame_positions[i_frame][i_atome][1])
                 
             cmap = plt.colormaps['viridis'].resampled(len(X))
             plt.scatter(X,Y,c=range(len(X)),cmap=cmap,s=8)
             
-            plt.title(self.simulation_name)
+            if title == "":
+                plt.title(self.simulation_name)
+            else : 
+                plt.title(title)
             plt.xlabel("x")
             plt.ylabel("y")
             plt.xlim(0,self.dimensions[0])
@@ -109,10 +95,10 @@ class DataFrames :
             plt.cla()
             files_names.append(self.path_folder + "/all_images/"+filename)
             images.append(imageio.imread(self.path_folder + "/all_images/"+filename))
-            print(f"{i_frame}/{self.nb_frames}")
+            print(f"Gif, frame : {i_frame+1}/{self.nb_frames}")
             
         try :
-            # print(f"images : {images}")
+            print("Compilation du gif...")
             imageio.mimsave(self.path_folder + "/" + self.simulation_name +".gif", images, duration=duration)
             print("Gif exporté sous : "+ self.path_folder +"/" + self.simulation_name +".gif")
         except OSError as error:
@@ -127,7 +113,7 @@ class DataFrames :
         for i_frame in range(self.nb_frames):
             Ec = 0
             for i_atome in range(self.nb_atomes):
-                Ec += 0.5*self.mass*(np.sqrt((self.data_frame[i_frame][i_atome][0][0]-self.data_frame[i_frame][i_atome][1][0])**2+(self.data_frame[i_frame][i_atome][0][1]-self.data_frame[i_frame][i_atome][1][1])**2)/self.dt)**2
+                Ec += 0.5*self.mass*(np.sqrt((self.data_frame_positions[i_frame][i_atome][0]-self.data_frame_old_positions[i_frame][i_atome][0])**2+(self.data_frame_positions[i_frame][i_atome][1]-self.data_frame_old_positions[i_frame][i_atome][1])**2)/self.dt)**2
             Ec_list.append(Ec/self.nb_atomes)
             
         plt.title("Ec au cours des itération")
@@ -145,9 +131,9 @@ class DataFrames :
         
         v2 = 0
         for i_atome in range(self.nb_atomes):
-            v2 += (np.sqrt((self.data_frame[i_frame][i_atome][0][0]-self.data_frame[i_frame][i_atome][1][0])**2+(self.data_frame[i_frame][i_atome][0][1]-self.data_frame[i_frame][i_atome][1][1])**2)/self.dt)**2
+            v2 += (np.sqrt((self.data_frame_positions[i_frame][i_atome][0]-self.data_frame_old_positions[i_frame][i_atome][0])**2+(self.data_frame_positions[i_frame][i_atome][1]-self.data_frame_old_positions[i_frame][i_atome][1])**2)/self.dt)**2
         v2 = v2/self.nb_atomes
-        T = v2*self.mass/(2*kb)
+        T = v2*self.mass/(2*kb) #On a 1/2 parce qu'on a un système 2D
         print(f"Temperature dans le système : {T}K")
     
     def calcul_rdf(self, d_max, nb_points, i_frame = 0):
@@ -158,7 +144,7 @@ class DataFrames :
         g_r = np.zeros(nb_points)
         d_max_2 = d_max**2
         
-        list_atomes = [self.data_frame[i_frame][i][0] for i in range(len(self.data_frame[i_frame]))]
+        list_atomes = [self.data_frame_positions[i_frame][i] for i in range(self.nb_atomes)]
         
         for atome1 in list_atomes:
             for atome0 in list_atomes:
@@ -186,8 +172,8 @@ class DataFrames :
         Y=np.array([])
         
         for i_atome in range(self.nb_atomes):
-            X = np.append(X,self.data_frame[i_frame][i_atome][0][0])
-            Y = np.append(Y,self.data_frame[i_frame][i_atome][0][1])
+            X = np.append(X,self.data_frame_positions[i_frame][i_atome][0])
+            Y = np.append(Y,self.data_frame_positions[i_frame][i_atome][1])
             
         cmap = plt.colormaps['viridis'].resampled(len(X))
         plt.scatter(X,Y,c=range(len(X)),cmap=cmap,s=8)
