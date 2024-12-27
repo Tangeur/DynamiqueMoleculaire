@@ -10,7 +10,6 @@ import matplotlib.pyplot as plt
 import random as rnd
 from datetime import datetime
 import os
-from decimal import Decimal
 import h5py
 import sys
 
@@ -112,13 +111,13 @@ class System:
         return old_position_calculated
     
     def initialise_system(self,  dmin_beetween_atomes, grid_type = "Random"):
-        """Créé le system selon le réseau souhaité selon : Random/Square/Hexagon avec un paramètre de maille : dmin_beetween_atomes."""
+        """Crée le system selon le réseau souhaité selon : Random/Square avec un paramètre de maille : dmin_beetween_atomes."""
         
         print(f"Création d'un système de dimensions {self.dimensions} consitué de {self.nb_atomes} atomes")
         
         if grid_type == "Square" :
             
-            print("[Info] Initialisation d'un système selon un réseau carré. Le nombre d'atomes va être adapté au réseau.")
+            print(f"[Info] Initialisation d'un système selon un réseau carré de paramètre de maille : {dmin_beetween_atomes} \nLe nombre d'atomes va être adapté au réseau.")
             
             self.grid_type = "Square"
             
@@ -161,10 +160,13 @@ class System:
         
         elif grid_type == "Random":
             
+            print(f"[Info] Initialisation d'un système dans une distribution aléatoire, avec une distance minimum entre chaque atome de : {dmin_beetween_atomes}")
+            
             self.grid_type = "Random"
             
             Lx,Ly = self.dimensions[0],self.dimensions[1]
             
+            #On adapte la taille du système pour que les côtés soient un multiple de 'dmin_beetween_atomes'
             if Lx%dmin_beetween_atomes != 0:
                 Lx = (Lx//dmin_beetween_atomes+1)*dmin_beetween_atomes
             if Ly%dmin_beetween_atomes != 0:
@@ -195,7 +197,7 @@ class System:
                 
                 if len(boxes) == 0:
                     print(f"On a pu ajouter {len(self.list_atomes)} atomes.")
-                    print("[ERROR] : On ne peut pas rajouter d'atomes sur la grille...")
+                    print("[ERROR] : On ne peut pas rajouter d'atomes sur la grille... Veuillez adapter le nombre d'atomes dans le système.")
                     raise ValueError(1) #On arrête le programme car on n'a pas pu générer toute la grille...
                     
                 
@@ -225,11 +227,11 @@ class System:
         
         #print(f"(dx,dy) : ({dx},{dy})")
         
-        dx = dx - int(dx*2/Lx)*Lx
+        dx = dx - int(dx*2/Lx)*Lx   #Application des conditions aux bords périodiques
         dy = dy - int(dy*2/Ly)*Ly
         r2 = (dx)**2+(dy)**2 #r^2
         
-        if r2 < self.force_Rcut2 :
+        if r2 < self.force_Rcut2 : #Si l'atome est au délà du force_Rcut on ne le prend pas en compte 
             if (r2==0):
                 return np.array([.0,.0])
             
@@ -256,7 +258,7 @@ class System:
             atome1.force = force_resultante
     
     def plot_system(self):
-        """Crée un graph des particules du système."""
+        """Crée et affiche un graph des particules dans le système."""
         
         X=np.array([])
         Y=np.array([])
@@ -270,8 +272,56 @@ class System:
         cmap = plt.colormaps['viridis'].resampled(len(X))
         plt.scatter(X,Y,c=range(len(X)),cmap=cmap,s=8)
         plt.show()
-      
+    
+    def iterate(self, nb_iteration, saving_rate = 0, adjust_temperature = False, printing=False):
+        """Fait passer le système au pas de temps suivant.
+        
+        -saving_rate = 10 :  Sauvegarde les données dans le fichier toutes les 10 frames
+        -adjust_temperature = True : Corrige la vitesse des particules pour qu'elle reste à la vitesse thermique lié à la température du système
+        -printing = True :  Affiche les plot au fur et à mesure. """
+
+        print("Itération du système...")
+        for i in range(nb_iteration):
+            
+            self.calculate_forces() #Calcul des forces qui s'exercent sur chaque atome 
+            for atome in self.list_atomes:
+                atome.move(self, self.dt) #On fait bouger les atomes d'un pas de temps
+            
+            if adjust_temperature == True: #On ajuste la vitesse des atomes pour qu'ils gardent la même vitesse thermique 
+                thermal_speed_norm = np.sqrt(2*kb*self.temperature/self.mass) #norme de la vitesse thermique
+                for atome in self.list_atomes:
+                    vect =  atome.old_position - atome.position
+                    vect_norm = np.sqrt(vect[0]**2+vect[1]**2)  #Norme du vecteur allant de la position vers la old_position                  
+                    a = thermal_speed_norm*self.dt/vect_norm    #Facteur de proportionalité 
+                    new_old_position = atome.position + vect * a 
+                    atome.old_position = new_old_position
+
+            self.iteration += 1
+            
+            try : 
+                if i % saving_rate == 0: 
+                    if printing:
+                        self.plot_system() 
+                    
+                    self.save_frame() #On sauvegarde la simulation 
+                    print(f"Implementation {i}/{nb_iteration}")
+                    
+            except ZeroDivisionError :
+                #On ne fait rien, on ne sauvegarde pas de trace de l'évolution du système
+                pass
+        
+        file = h5py.File(self.path_simulation_folder+"/"+self.simulation_name+".hdf5",'a')        
+        file.create_dataset(name="list_frames", data=self.list_frames) #On enregistre la liste des frames dans le fichier pour la lecture des données 
+        file.close()
+        print("Séquence d'itération terminée")
+    
+    def add_atome(self, Atome):
+        """Ajoute un atome au système."""
+        
+        self.list_atomes.append(Atome)
+    
     def save_frame(self): 
+        """Sauvegarde les données de la frame dans le fichier de simulation"""
         
         positions = []
         old_positions = []
@@ -290,54 +340,16 @@ class System:
         group.create_dataset("old_position",data=old_positions)
         group.attrs.create("iteration", self.iteration)
         file.close()
-
-    
-    def iterate(self, nb_iteration, saving_rate = 0, adjust_temperature = False, printing=False):
-        """Fait passer le système au pas de temps suivant.
-        printing : (True) Affiche les plot au fur et à mesure. """
-
-        print("Itération du système...")
-        for i in range(nb_iteration):
-            self.calculate_forces()
-            for atome in self.list_atomes:
-                atome.move(self, self.dt)
-            
-            if adjust_temperature == True:
-                v_norm = np.sqrt(2*kb*self.temperature/self.mass)
-                for atome in self.list_atomes:
-                    vect =  atome.old_position - atome.position
-                    vect_norm = np.sqrt(vect[0]**2+vect[1]**2)                    
-                    a = v_norm*self.dt/vect_norm
-                    new_old_position = atome.position + vect * a 
-                    atome.old_position = new_old_position
-
-            self.iteration += 1
-            
-            try : 
-                if i % saving_rate == 0:
-                    if printing:
-                        self.plot_system() 
-                    
-                    self.save_frame()
-                    print(f"Implementation {i}/{nb_iteration}")
-                    
-            except ZeroDivisionError :
-                #On ne fait rien, on ne sauvegarde pas de trace de l'évolution du système
-                pass
-        
-        file = h5py.File(self.path_simulation_folder+"/"+self.simulation_name+".hdf5",'a')        
-        file.create_dataset(name="list_frames", data=self.list_frames)
-        file.close()
-        print("Séquence d'itération terminée")
-        
-    
-    
-    def add_atome(self, Atome):
-        """Ajoute un atome au système."""
-        
-        self.list_atomes.append(Atome)
     
     def save_initialisation(self, save_path, simulation_name = ""):
+        
+        """Cette fonction  : 
+            ->Vérifie que le système a bien été initialisé 
+            ->Crée le dossier dans lequel on enregistre
+            ->Crée le fichier qui contient les données que la simulation va enregistrer
+            
+            Le nom de la fonction se génère tout seul en fonction des paramètres du système.
+            """
         
         if self.grid_type == None:
             print("[ERREUR] Vous n'avez pas initialisé le système avec : 'initialise_system()'")
@@ -345,25 +357,31 @@ class System:
         
         self.list_frames = []
         
+        #Assure du dossier dans lequel sont enregistré tous les dossier de simulation 
         self.save_path = save_path
         if not os.path.isdir(self.save_path):
             os.mkdir(self.save_path)
         
         date = datetime.now().isoformat().replace(":","-")
         date = date.replace("T", " Time_")
+        date = date.split(".")[0]
         
+        #Définit le nom de la simulation
         if simulation_name == "":
-            self.simulation_name = f"N={self.nb_atomes};T={self.temperature}K;epsilon={self.epsilon}kBJ;sigma={self.sigma}pm;dimensions=({self.dimensions[0]},{self.dimensions[1]});dt={self.dt}" +f" Date_{date}"
+            self.simulation_name = f"N={self.nb_atomes} T={self.temperature}K epsilon={format(self.epsilon,'.4g')}kBJ sigma={format(self.sigma,'.4g')}pm dimensions=({format(self.dimensions[0],'.4g')},{format(self.dimensions[1],'.4g')}) dt={format(self.dt,'.4g')}" +f" Date_{date}"
         else :
             self.simulation_name = simulation_name
         
+        #Création du dossier de la simulation
         self.path_simulation_folder = self.save_path+"/"+self.simulation_name
         os.mkdir(self.path_simulation_folder)
         
         self.path_simulation_file = self.path_simulation_folder+"/"+self.simulation_name+".hdf5"
         
+        #Création et ouverture du fichier de simulation
         file = h5py.File(self.path_simulation_file, 'a')
 
+        #Enregistre les attributs de la simulation dans le fichier
         file.attrs.create("dimensions", self.dimensions)
         file.attrs.create("nb_atomes",self.nb_atomes)
         file.attrs.create("mass",self.mass)

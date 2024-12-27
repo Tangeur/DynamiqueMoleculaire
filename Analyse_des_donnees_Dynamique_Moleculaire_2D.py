@@ -5,10 +5,8 @@ Created on Sat Dec 14 00:34:23 2024
 @author: Tanguy GINOCCHIO
 """
 
-import re
 import numpy as np
 import matplotlib.pyplot as plt 
-from decimal import Decimal
 import imageio.v2 as imageio
 import os
 from datetime import datetime
@@ -61,7 +59,7 @@ class DataFrames :
         print("Fichier chargé.")
 
     def create_gif(self,duration = 0.01,title=""):
-        """Créé un gif à partir de toutes les frames générée par la simulation"""
+        """Crée un gif à partir de toutes les frames générée par la simulation"""
         
         if not os.path.exists(self.path_folder+"/all_images"):
             os.mkdir(self.path_folder+"/all_images")
@@ -107,7 +105,7 @@ class DataFrames :
         
 
     def calcul_energie(self):
-        """Créé un graphique représentant l'énergie cinétique dans le système en fonctoin de la frame"""
+        """Crée un graphique représentant l'énergie cinétique dans le système en fonctoin de la frame"""
         
         print("[Info] Calcul de l'énegie cinétique au cours de la simulation")
         Ec_list = []
@@ -129,6 +127,7 @@ class DataFrames :
         plt.show()
         
     def calcul_temperature(self, i_frame):
+        "Calcul la température dans le système à partir de la vitesse des particules"
         
         v2 = 0
         for i_atome in range(self.nb_atomes):
@@ -138,7 +137,10 @@ class DataFrames :
         print(f"Temperature dans le système : {T}K")
     
     def calcul_rdf(self, d_max, nb_points, i_frame = 0):
-        """Calcul la RDF dans le système."""
+        """Calcul la RDF dans le système.
+        -d_max : distance jusqu'à laquelle la RDF est calculée
+        -nb_points : nombres de segments de l'histogramme
+        -i_frame : numéro de la frame dont on veut calculer l'histogramme"""
         
         Lx,Ly = self.dimensions[0], self.dimensions[1]
         dr = d_max/nb_points
@@ -177,6 +179,7 @@ class DataFrames :
         pass
     
     def plot_frame(self, i_frame=0):
+        """Affiche le sytème pour la frame donnée"""
         X=np.array([])
         Y=np.array([])
         
