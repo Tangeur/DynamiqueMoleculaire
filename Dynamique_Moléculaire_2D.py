@@ -91,6 +91,7 @@ class System:
         self.beta = 24*epsilon*sigma**6
         self.iteration = 0
         self.list_atomes = []
+        self.list_frames = []
         self.grid_type = None
         
         self.save_path = ""     #Chemin du dossier qui contient les dossiers de toutes les simulations
@@ -291,7 +292,7 @@ class System:
         file.close()
 
     
-    def iterate(self, nb_iteration, saving_rate = 0, printing=False):
+    def iterate(self, nb_iteration, saving_rate = 0, adjust_temperature = False, printing=False):
         """Fait passer le système au pas de temps suivant.
         printing : (True) Affiche les plot au fur et à mesure. """
 
@@ -300,6 +301,16 @@ class System:
             self.calculate_forces()
             for atome in self.list_atomes:
                 atome.move(self, self.dt)
+            
+            if adjust_temperature == True:
+                v_norm = np.sqrt(2*kb*self.temperature/self.mass)
+                for atome in self.list_atomes:
+                    vect =  atome.old_position - atome.position
+                    vect_norm = np.sqrt(vect[0]**2+vect[1]**2)                    
+                    a = v_norm*self.dt/vect_norm
+                    new_old_position = atome.position + vect * a 
+                    atome.old_position = new_old_position
+
             self.iteration += 1
             
             try : 

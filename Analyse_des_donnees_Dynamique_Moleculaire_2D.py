@@ -50,6 +50,7 @@ class DataFrames :
         self.nb_frames = len(file["list_frames"])
         self.nb_atomes = file.attrs["nb_atomes"]
         print(f"nb_frames : {self.nb_frames}")
+        print(f"nb_atomes :  {self.nb_atomes}")
         
         for i in range(self.nb_frames):
             frame_name = file["list_frames"][i].decode("utf-8")
@@ -108,7 +109,7 @@ class DataFrames :
     def calcul_energie(self):
         """Créé un graphique représentant l'énergie cinétique dans le système en fonctoin de la frame"""
         
-        print("Calcul de l'énegie cinétique au cours de la simulation")
+        print("[Info] Calcul de l'énegie cinétique au cours de la simulation")
         Ec_list = []
         for i_frame in range(self.nb_frames):
             Ec = 0
@@ -161,6 +162,14 @@ class DataFrames :
                 if r2 < d_max_2:
                     r = np.sqrt(r2)
                     g_r[int(r/dr)] += 1
+        V = self.dimensions[0]*self.dimensions[1]
+        dr_2 = dr**2
+        
+        g_r[0]=0
+        for i in range(len(g_r)):
+            g_r[i] = g_r[i]*V/(2*np.pi*dr_2*(2*i+1)*len(list_atomes)**2)
+        
+        # print(g_r)
         
         x = np.linspace(0,d_max,nb_points)
         plt.plot(x,g_r)
